@@ -162,44 +162,14 @@
             </ul>
         </div>
 
-        <a href="#" class="download-btn" onclick="downloadUserscript()">
-            📥 Download Userscript
+        <a href="bitaxe-setter.user.js" class="download-btn">
+            📥 Install Userscript
         </a>
 
         <p class="install-note">
-            Requires <a href="https://www.tampermonkey.net/" target="_blank">Tampermonkey</a> browser extension to install
+            Requires <a href="https://www.tampermonkey.net/" target="_blank">Tampermonkey</a> browser extension<br>
+            Click the button above and Tampermonkey will offer to install the script
         </p>
     </div>
-
-    <script>
-        function downloadUserscript() {
-            // Create download link for the userscript file
-            const filename = 'bitaxe-setter.user.js';
-            const element = document.createElement('a');
-            
-            // You'll need to put the actual script content here or link to the file
-            const scriptContent = `// ==UserScript==
-// @name         Bitaxe Quick Stratum Setter (UI) - Wallet + Auto Worker
-// @namespace    https://tampermonkey.net/
-// @version      2.0.0
-// @description  Click button -> clean UI -> set stratum pool/port + wallet on multiple Bitaxe rigs. Auto-sets user as {wallet}.bitaxe1/2/3, then restarts.
-// @match        http://192.168.4.*/*
-// @match        http://*/*
-// @grant        GM_addStyle
-// @run-at       document-end
-// ==/UserScript==
-
-// The full script content would go here
-// For now, this is a placeholder - you'll want to copy the actual script content`;
-
-            element.setAttribute('href', 'data:text/javascript;charset=utf-8,' + encodeURIComponent(scriptContent));
-            element.setAttribute('download', filename);
-            element.style.display = 'none';
-            
-            document.body.appendChild(element);
-            element.click();
-            document.body.removeChild(element);
-        }
-    </script>
 </body>
 </html>
