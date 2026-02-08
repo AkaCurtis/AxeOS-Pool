@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Bitaxe Quick Stratum Setter (UI) - Wallet + Auto Worker
+// @name         Bitaxe Quick Stratum Setter (Integrated UI) - Wallet + Auto Worker
 // @namespace    https://tampermonkey.net/
-// @version      2.1.0
-// @description  Click button -> clean UI -> set stratum pool/port + wallet on multiple Bitaxe rigs. Auto-discovers devices and uses their hostname as worker name, then restarts.
-// @author       GitHub Copilot
+// @version      3.0.0
+// @description  Integrated UI for configuring multiple Bitaxe rigs. Auto-discovers devices, bulk configuration, and matches device theme.
+// @author       Curtis
 // @match        http://192.168.*.*/*
 // @match        http://10.*.*.*/*
 // @match        http://172.*.*.*/*
@@ -60,358 +60,670 @@
   }
 
   GM_addStyle(`
-    #bx-btn {
-      position: fixed; right: 20px; bottom: 20px; z-index: 2147483647;
-      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-      color: #ffffff; border: none;
-      padding: 14px 20px; border-radius: 12px; cursor: pointer;
-      font: 600 14px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      box-shadow: 0 4px 20px rgba(37, 99, 235, 0.3), 0 1px 3px rgba(0,0,0,0.12);
-      user-select: none; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      border: 1px solid rgba(255,255,255,0.1);
-    }
-    #bx-btn:hover { 
-      transform: translateY(-2px);
-      box-shadow: 0 8px 25px rgba(37, 99, 235, 0.4), 0 4px 10px rgba(0,0,0,0.15);
-    }
-
-    #bx-overlay {
-      position: fixed; inset: 0; z-index: 2147483647;
-      background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);
-      display: none; align-items: center; justify-content: center;
-      padding: 2rem; animation: fadeIn 0.2s ease-out;
-    }
-    @keyframes fadeIn { 
-      from { opacity: 0; backdrop-filter: blur(0px); } 
-      to { opacity: 1; backdrop-filter: blur(8px); } 
-    }
-
-    #bx-modal {
-      width: min(1200px, 95vw); max-height: 90vh; overflow: hidden;
-      background: #1e1e2e;
-      color: #cdd6f4;
-      border: 1px solid #313244;
-      border-radius: 16px;
-      box-shadow: 0 25px 50px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.05);
-      font: 14px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-      display: flex; flex-direction: column;
-    }
-
-    #bx-header {
-      background: linear-gradient(135deg, #181825 0%, #11111b 100%);
-      color: #cdd6f4; padding: 2rem;
-      border-bottom: 1px solid #313244;
-      position: relative;
-    }
-
-    #bx-title { 
-      font-weight: 700; font-size: 1.75rem; margin-bottom: 0.5rem;
-      color: #89b4fa;
-      letter-spacing: -0.025em;
-    }
-    #bx-subtitle { 
-      font-size: 0.875rem; color: #a6adc8;
-      font-weight: 500;
-    }
-
-    #bx-close {
-      position: absolute; top: 1.5rem; right: 2rem;
-      width: 2.5rem; height: 2.5rem; border-radius: 10px;
-      border: 1px solid #313244;
-      background: #181825;
-      color: #cdd6f4; cursor: pointer; 
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      font-size: 1.1rem; font-weight: 500;
-      display: flex; align-items: center; justify-content: center;
-    }
-    #bx-close:hover { 
-      background: #f38ba8; color: #11111b;
-      border-color: #f38ba8;
-      transform: scale(1.05);
-    }
-
-    #bx-body { 
-      padding: 2rem; 
-      flex: 1; 
-      overflow-y: auto;
-      background: #1e1e2e;
-    }
-    .bx-section { 
-      padding: 1.75rem; 
-      background: #181825; 
-      border-radius: 12px; 
-      border: 1px solid #313244;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .bx-section:hover {
-      border-color: #45475a;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-    }
-    .bx-sections-row {
-      display: flex; gap: 1.75rem;
-    }
-    .bx-sections-row .bx-section {
-      flex: 1;
-      min-width: 0;
-    }
-    .bx-section-title { 
-      font-weight: 650; margin-bottom: 1.5rem; color: #fab387; 
-      font-size: 1.1rem; display: flex; align-items: center; gap: 0.75rem;
-      border-bottom: 1px solid #313244;
-      padding-bottom: 1rem;
-      letter-spacing: -0.025em;
-    }
-    .bx-row { 
-      display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.25rem; 
-    }
-    .bx-row:last-child {
-      margin-bottom: 0;
-    }
-    .bx-label { 
-      font-size: 0.875rem; color: #a6adc8; font-weight: 500;
-      margin-bottom: 0.5rem;
-      letter-spacing: 0.025em;
-    }
-    .bx-input, .bx-select {
-      width: 100%; padding: 0.875rem 1rem; border-radius: 8px;
-      background: #11111b; color: #cdd6f4;
-      border: 1.5px solid #313244;
-      outline: none; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      font-size: 0.875rem;
-      font-weight: 450;
-    }
-    .bx-select {
-      background: #11111b; color: #cdd6f4;
-    }
-    .bx-select option {
-      background: #11111b; color: #cdd6f4;
-    }
-    .bx-input:focus, .bx-select:focus { 
-      border-color: #89b4fa; 
-      box-shadow: 0 0 0 3px rgba(137, 180, 250, 0.12);
-      background: #181825;
-    }
-    .bx-input::placeholder {
-      color: #6c7086;
-    }
-
-    .bx-config-row { 
-      display: flex; gap: 1rem; align-items: flex-end; 
-    }
-    .bx-config-row .bx-row { 
-      flex: 1; margin-bottom: 0; 
-    }
-    .bx-config-buttons { 
-      display: flex; gap: 0.75rem; 
-    }
-    .bx-small-btn {
-      padding: 0.75rem 1rem; font-size: 0.875rem; border-radius: 8px;
-      border: 1px solid #313244; 
-      background: #89b4fa; color: #11111b;
-      cursor: pointer; 
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      font-weight: 600; white-space: nowrap;
-    }
-    .bx-small-btn:hover { 
-      background: #74c7ec; 
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(137, 180, 250, 0.25);
-    }
-    .bx-delete { 
-      background: #f38ba8; color: #11111b;
-      border-color: #f38ba8;
-    }
-    .bx-delete:hover { 
-      background: #eba0ac;
-      box-shadow: 0 4px 12px rgba(243, 139, 168, 0.25);
-    }
-
-    #bx-footer {
-      padding: 1.75rem 2rem;
-      display: flex; gap: 1rem; align-items: center; justify-content: flex-end;
-      border-top: 1px solid #313244;
-      background: #181825;
-    }
-
-    .bx-btn2 {
-      border: 1px solid #313244; 
-      background: #45475a; color: #cdd6f4; 
-      padding: 0.875rem 1.5rem; 
-      border-radius: 8px;
-      cursor: pointer; font-weight: 600; 
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      font-size: 0.875rem;
-    }
-    .bx-btn2:hover { 
-      background: #585b70;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-
-    .bx-primary {
-      background: #89b4fa; color: #11111b;
-      border-color: #89b4fa;
-    }
-    .bx-primary:hover { 
-      background: #74c7ec;
-      border-color: #74c7ec;
-      box-shadow: 0 4px 12px rgba(137, 180, 250, 0.25);
-    }
-
-    #bx-log {
-      padding: 1.5rem 2rem; margin: 0;
-      max-height: 200px; overflow-y: auto;
-      border-top: 1px solid #313244;
-      font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
-      font-size: 0.8rem; line-height: 1.6;
-      color: #cdd6f4; 
-      background: #11111b;
-      white-space: pre-wrap;
-    }
-    .bx-muted { 
-      color: #6c7086; 
-    }
-
-    #bx-donate {
-      position: fixed; right: 18px; bottom: 75px; z-index: 2147483647;
-      background: var(--bs-success, #198754); color: var(--bs-light, #fff); 
-      border: none;
-      padding: 0.5rem 0.75rem; border-radius: 0.375rem; cursor: pointer;
-      font: 500 0.875rem -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      box-shadow: 0 0.25rem 0.75rem rgba(0,0,0,.1);
-      user-select: none; transition: all 0.15s ease;
-    }
-    #bx-donate:hover { 
-      background: var(--bs-success, #157347); 
-      transform: translateY(-1px); 
-      box-shadow: 0 0.375rem 1rem rgba(0,0,0,.15);
-    }
-
-    #bx-donate-modal {
-      position: fixed; inset: 0; z-index: 2147483648;
-      background: rgba(0,0,0,.5); backdrop-filter: blur(3px);
-      display: none; align-items: center; justify-content: center;
-      padding: 1rem;
+    /* Comprehensive CSS Reset and Isolation for Bitaxe Setter */
+    #bitaxe-setter-panel {
+      all: initial !important;
+      display: block !important;
     }
     
-    #bx-donate-content {
-      width: min(400px, 95vw);
-      background: var(--bs-dark, #212529); color: var(--bs-light, #f8f9fa); 
-      border: 1px solid var(--bs-border-color, #495057); 
-      border-radius: 0.375rem; 
-      box-shadow: 0 0.5rem 1rem rgba(0,0,0,.15);
-      overflow: hidden;
-    }
-    
-    .bx-donate-header {
-      background: var(--bs-success, #198754);
-      color: var(--bs-light, #fff); text-align: center; padding: 1.5rem;
-      font-weight: 600; font-size: 1.125rem;
-    }
-    
-    .bx-wallet-item {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 1rem; border-bottom: 1px solid var(--bs-border-color, #495057);
-      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-      font-size: 0.875rem;
-    }
-    .bx-wallet-item:last-child { border-bottom: none; }
-    
-    .bx-wallet-label { 
-      font-weight: 600; color: var(--bs-warning, #ffc107); 
-      min-width: 3rem; margin-right: 1rem;
-    }
-    .bx-wallet-addr { 
-      color: var(--bs-light, #f8f9fa); word-break: break-all; 
-      flex: 1; margin-right: 1rem;
-    }
-    
-    .bx-copy-btn {
-      background: var(--bs-primary, #0d6efd); 
-      border: 1px solid var(--bs-primary, #0d6efd);
-      color: var(--bs-light, #fff); padding: 0.5rem 0.75rem; 
-      border-radius: 0.375rem;
-      cursor: pointer; font-size: 0.75rem; font-weight: 500;
-      transition: all 0.15s ease; white-space: nowrap;
-    }
-    .bx-copy-btn:hover { 
-      background: var(--bs-primary, #0b5ed7); 
-      border-color: var(--bs-primary, #0b5ed7);
+    #bitaxe-setter-panel,
+    #bitaxe-setter-panel *,
+    #bitaxe-setter-panel *::before,
+    #bitaxe-setter-panel *::after {
+      box-sizing: border-box !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      border: 0 !important;
+      outline: 0 !important;
+      font-size: 100% !important;
+      vertical-align: baseline !important;
+      background: transparent !important;
+      text-decoration: none !important;
+      text-transform: none !important;
+      letter-spacing: normal !important;
+      font-style: normal !important;
+      font-weight: normal !important;
+      line-height: normal !important;
+      color: inherit !important;
     }
 
-    #bx-device-list {
-      border: 1px solid #313244; 
-      border-radius: 8px; 
-      background: #11111b; padding: 1rem; min-height: 3.5rem;
+    /* Root container with theme variables and strong isolation */
+    #bitaxe-setter-panel.bitaxe-setter-container {
+      /* CSS Custom Properties matching AxeOS dashboard */
+      --bx-primary: #4caf50;
+      --bx-primary-text: #ffffff;
+      --bx-bg-primary: #0B1219;
+      --bx-bg-secondary: #070D17;
+      --bx-bg-raised: #1A2632;
+      --bx-border: #1A2632;
+      --bx-border-hover: rgba(255,255,255,0.03);
+      --bx-text: rgba(255, 255, 255, 0.87);
+      --bx-text-secondary: rgba(255, 255, 255, 0.6);
+      --bx-danger: #f85149;
+      --bx-success: #4caf50;
+      --bx-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      
+      /* Strong styling overrides */
+      position: relative !important;
+      z-index: 1000 !important;
+      margin: 2rem 0 !important;
+      background: var(--bx-bg-primary, #0B1219) !important;
+      border: 1px solid var(--bx-border, #2a3441) !important;
+      border-radius: 12px !important;
+      overflow: hidden !important;
+      font-family: var(--bx-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif) !important;
+      color: var(--bx-text, rgba(255, 255, 255, 0.87)) !important;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25) !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      clear: both !important;
+      transition: opacity 0.3s ease, transform 0.3s ease !important;
+      opacity: 1 !important;
+      transform: translateY(0) !important;
+      font-size: 14px !important;
+      line-height: 1.5 !important;
     }
-    
-    .bx-device-item {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 0.75rem; margin-bottom: 0.5rem;
-      background: #181825; border-radius: 6px;
-      border: 1px solid #313244;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* Panel header styling */
+    #bitaxe-setter-panel .bx-panel-header {
+      background: var(--bx-bg-secondary, #070D17) !important;
+      padding: 1.5rem 2rem !important;
+      border-bottom: 1px solid var(--bx-border, #2a3441) !important;
+      position: relative !important;
+      width: 100% !important;
     }
-    .bx-device-item:hover {
-      background: #1e1e2e;
-      border-color: #45475a;
-      transform: translateX(2px);
+
+    #bitaxe-setter-panel .bx-panel-title {
+      font-size: 1.5rem !important;
+      font-weight: 700 !important;
+      color: var(--bx-primary, #F7931A) !important;
+      margin-bottom: 0.5rem !important;
+      letter-spacing: -0.025em !important;
+      font-family: var(--bx-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif) !important;
+      line-height: 1.2 !important;
     }
-    .bx-device-item:last-child { 
-      margin-bottom: 0; 
+
+    #bitaxe-setter-panel .bx-panel-subtitle {
+      font-size: 0.875rem !important;
+      color: var(--bx-text-secondary, rgba(255, 255, 255, 0.6)) !important;
+      font-weight: 500 !important;
+      font-family: var(--bx-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif) !important;
+      line-height: 1.4 !important;
     }
-    
-    .bx-device-info { 
-      font-size: 0.875rem; 
+
+    #bitaxe-setter-panel .bx-toggle-btn {
+      position: absolute !important;
+      top: 1.5rem !important;
+      right: 2rem !important;
+      background: var(--bx-primary, #F7931A) !important;
+      color: var(--bx-primary-text, #ffffff) !important;
+      border: 1px solid var(--bx-primary, #F7931A) !important;
+      padding: 0.5rem 1rem !important;
+      border-radius: 8px !important;
+      cursor: pointer !important;
+      font-size: 0.875rem !important;
+      font-weight: 600 !important;
+      transition: all 0.2s ease !important;
+      font-family: var(--bx-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif) !important;
+      box-sizing: border-box !important;
+      line-height: 1 !important;
     }
-    .bx-device-url { 
-      font-weight: 600; color: #89b4fa; 
-      margin-bottom: 0.25rem;
+
+    #bitaxe-setter-panel .bx-toggle-btn:hover {
+      opacity: 0.9 !important;
+      transform: translateY(-1px) !important;
     }
-    .bx-device-worker { 
-      color: #a6adc8; font-size: 0.75rem; 
-      font-weight: 450;
+
+    #bitaxe-setter-panel .bx-panel-body {
+      display: none !important;
+      padding: 2rem !important;
+      background: var(--bx-bg-primary, #0B1219) !important;
+      box-sizing: border-box !important;
+      width: 100% !important;
     }
-    
-    .bx-worker-input {
-      background: #11111b !important;
-      border: 1px solid #313244 !important;
-      color: #cdd6f4 !important;
+
+    #bitaxe-setter-panel .bx-panel-body.expanded {
+      display: block !important;
+    }
+
+    #bitaxe-setter-panel .bx-sections-grid {
+      display: grid !important;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
+      gap: 1.5rem !important;
+      margin-bottom: 2rem !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+
+    #bitaxe-setter-panel .bx-section {
+      background: var(--bx-bg-secondary, #070D17) !important;
+      border: 1px solid var(--bx-border, #2a3441) !important;
+      border-radius: 12px !important;
+      padding: 1.5rem !important;
+      transition: all 0.2s ease !important;
+      box-sizing: border-box !important;
+      min-width: 0 !important;
+      position: relative !important;
+    }
+
+    #bitaxe-setter-panel .bx-section:hover {
+      border-color: var(--bx-border-hover, rgba(255,255,255,0.1)) !important;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+    }
+
+    #bitaxe-setter-panel .bx-section-title {
+      font-size: 1rem !important;
+      font-weight: 650 !important;
+      color: var(--bx-primary, #F7931A) !important;
+      margin-bottom: 1.25rem !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 0.5rem !important;
+      border-bottom: 1px solid var(--bx-border, #2a3441) !important;
+      padding-bottom: 0.75rem !important;
+      font-family: var(--bx-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif) !important;
+      line-height: 1.2 !important;
+    }
+
+    #bitaxe-setter-panel .bx-row {
+      margin-bottom: 1rem !important;
+      box-sizing: border-box !important;
+      width: 100% !important;
+    }
+
+    #bitaxe-setter-panel .bx-row:last-child {
+      margin-bottom: 0 !important;
+    }
+
+    #bitaxe-setter-panel .bx-label {
+      display: block !important;
+      font-size: 0.875rem !important;
+      color: var(--bx-text-secondary, rgba(255, 255, 255, 0.6)) !important;
+      font-weight: 500 !important;
+      margin-bottom: 0.5rem !important;
+      font-family: var(--bx-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif) !important;
+      line-height: 1.4 !important;
+    }
+
+    #bitaxe-setter-panel .bx-input,
+    #bitaxe-setter-panel .bx-select {
+      width: 100% !important;
+      padding: 0.75rem 1rem !important;
+      background: var(--bx-bg-primary, #0B1219) !important;
+      color: var(--bx-text, rgba(255, 255, 255, 0.87)) !important;
+      border: 1px solid var(--bx-border, #2a3441) !important;
+      border-radius: 8px !important;
+      font-size: 0.875rem !important;
+      transition: all 0.2s ease !important;
+      outline: none !important;
+      font-family: var(--bx-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif) !important;
+      box-sizing: border-box !important;
+    }
+
+    #bitaxe-setter-panel .bx-input:focus,
+    #bitaxe-setter-panel .bx-select:focus {
+      border-color: var(--bx-primary, #F7931A) !important;
+      box-shadow: 0 0 0 3px rgba(247, 147, 26, 0.2) !important;
+    }
+
+    #bitaxe-setter-panel .bx-input::placeholder {
+      color: var(--bx-text-secondary, rgba(255, 255, 255, 0.6)) !important;
+      opacity: 0.7 !important;
+    }
+
+    #bitaxe-setter-panel .bx-btn {
+      background: var(--bx-primary, #F7931A) !important;
+      color: var(--bx-primary-text, #ffffff) !important;
+      border: 1px solid var(--bx-primary, #F7931A) !important;
+      padding: 0.75rem 1.25rem !important;
+      border-radius: 8px !important;
+      font-size: 0.875rem !important;
+      font-weight: 600 !important;
+      cursor: pointer !important;
+      transition: all 0.2s ease !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 0.5rem !important;
+      text-decoration: none !important;
+      white-space: nowrap !important;
+      box-sizing: border-box !important;
+      font-family: var(--bx-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif) !important;
+      vertical-align: top !important;
+      line-height: 1 !important;
+    }
+
+    #bitaxe-setter-panel .bx-btn:hover {
+      opacity: 0.9 !important;
+      transform: translateY(-1px) !important;
+      box-shadow: 0 4px 12px rgba(247, 147, 26, 0.3) !important;
+    }
+
+    #bitaxe-setter-panel .bx-btn-secondary {
+      background: var(--bx-bg-raised, #1A2632) !important;
+      color: var(--bx-text, rgba(255, 255, 255, 0.87)) !important;
+      border-color: var(--bx-border, #2a3441) !important;
+    }
+
+    #bitaxe-setter-panel .bx-btn-secondary:hover {
+      background: var(--bx-border-hover, rgba(255,255,255,0.1)) !important;
+      border-color: var(--bx-primary, #F7931A) !important;
+    }
+
+    #bitaxe-setter-panel .bx-btn-danger {
+      background: var(--bx-danger, #f85149) !important;
+      border-color: var(--bx-danger, #f85149) !important;
+    }
+
+    #bitaxe-setter-panel .bx-btn-danger:hover {
+      opacity: 0.9 !important;
+      box-shadow: 0 4px 12px rgba(248, 81, 73, 0.3) !important;
+    }
+
+    #bitaxe-setter-panel .bx-btn-small {
+      padding: 0.5rem 0.75rem !important;
+      font-size: 0.75rem !important;
+    }
+
+    #bitaxe-setter-panel .bx-btn-group {
+      display: flex !important;
+      gap: 0.75rem !important;
+      flex-wrap: wrap !important;
+      align-items: center !important;
+      box-sizing: border-box !important;
+    }
+
+    #bitaxe-setter-panel .bx-flex-row {
+      display: flex !important;
+      gap: 1rem !important;
+      align-items: flex-end !important;
+      flex-wrap: wrap !important;
+      box-sizing: border-box !important;
+    }
+
+    #bitaxe-setter-panel .bx-flex-row .bx-row {
+      flex: 1 !important;
+      margin-bottom: 0 !important;
+    }
+
+    #bitaxe-setter-panel #bx-device-list {
+      background: var(--bx-bg-primary, #0B1219) !important;
+      border: 1px solid var(--bx-border, #2a3441) !important;
+      border-radius: 8px !important;
+      padding: 1rem !important;
+      min-height: 3rem !important;
+      max-height: 300px !important;
+      overflow-y: auto !important;
+      box-sizing: border-box !important;
+      width: 100% !important;
+    }
+
+    #bitaxe-setter-panel .bx-device-item {
+      display: flex !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+      padding: 0.75rem !important;
+      margin-bottom: 0.5rem !important;
+      background: var(--bx-bg-secondary, #070D17) !important;
+      border: 1px solid var(--bx-border, #2a3441) !important;
+      border-radius: 8px !important;
+      transition: all 0.2s ease !important;
+      box-sizing: border-box !important;
+    }
+
+    #bitaxe-setter-panel .bx-device-item:hover {
+      background: var(--bx-bg-raised, #1A2632) !important;
+      border-color: var(--bx-primary, #F7931A) !important;
+      transform: translateX(2px) !important;
+    }
+
+    #bitaxe-setter-panel .bx-device-item:last-child {
+      margin-bottom: 0 !important;
+    }
+
+    #bitaxe-setter-panel .bx-device-info {
+      flex: 1 !important;
+    }
+
+    #bitaxe-setter-panel .bx-device-url {
+      font-weight: 600 !important;
+      color: var(--bx-primary, #F7931A) !important;
+      margin-bottom: 0.25rem !important;
+      font-family: var(--bx-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif) !important;
+    }
+
+    #bitaxe-setter-panel .bx-worker-input {
+      background: var(--bx-bg-primary, #0B1219) !important;
+      border: 1px solid var(--bx-border, #2a3441) !important;
+      color: var(--bx-text, rgba(255, 255, 255, 0.87)) !important;
       border-radius: 6px !important;
       padding: 0.5rem !important;
       font-size: 0.75rem !important;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+      width: 100% !important;
+      margin-top: 0.25rem !important;
+      font-family: var(--bx-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif) !important;
+      box-sizing: border-box !important;
     }
-    
-    .bx-worker-input:focus {
-      border-color: #89b4fa !important;
-      box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.12) !important;
+
+    #bitaxe-setter-panel .bx-worker-input:focus {
+      border-color: var(--bx-primary, #F7931A) !important;
+      box-shadow: 0 0 0 2px rgba(247, 147, 26, 0.2) !important;
       outline: none !important;
     }
-    
-    .bx-worker-input:hover {
-      border-color: #45475a !important;
+
+    #bitaxe-setter-panel .bx-no-devices {
+      text-align: center !important;
+      padding: 2rem !important;
+      color: var(--bx-text-secondary, rgba(255, 255, 255, 0.6)) !important;
+      font-style: italic !important;
+      font-family: var(--bx-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif) !important;
+    }
+
+    #bitaxe-setter-panel .bx-actions-bar {
+      background: var(--bx-bg-secondary, #070D17) !important;
+      border-top: 1px solid var(--bx-border, #2a3441) !important;
+      padding: 1.5rem 2rem !important;
+      display: flex !important;
+      gap: 1rem !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      flex-wrap: wrap !important;
+      box-sizing: border-box !important;
+    }
+
+    #bitaxe-setter-panel .bx-log {
+      background: var(--bx-bg-secondary, #070D17) !important;
+      border-top: 1px solid var(--bx-border, #2a3441) !important;
+      padding: 1rem 2rem !important;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace !important;
+      font-size: 0.8rem !important;
+      line-height: 1.6 !important;
+      color: var(--bx-text, rgba(255, 255, 255, 0.87)) !important;
+      white-space: pre-wrap !important;
+      max-height: 200px !important;
+      overflow-y: auto !important;
+      display: none !important;
+      box-sizing: border-box !important;
+    }
+
+    #bitaxe-setter-panel .bx-log.visible {
+      display: block !important;
+    }
+
+    /* Donate button */
+    #bx-donate {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--bx-success);
+      color: white;
+      border: none;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 600;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      transition: all 0.2s ease;
+      z-index: 1000;
+    }
+
+    #bx-donate:hover {
+      background: color-mix(in srgb, var(--bx-success) 90%, white);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+    }
+
+    /* Donate modal */
+    #bx-donate-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    #bx-donate-content {
+      width: min(400px, 95vw);
+      background: var(--bx-bg-primary);
+      border: 1px solid var(--bx-border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 25px 50px rgba(0,0,0,0.25);
+    }
+
+    .bx-donate-header {
+      background: var(--bx-success);
+      color: white;
+      text-align: center;
+      padding: 1.5rem;
+      font-weight: 600;
+      font-size: 1.125rem;
+    }
+
+    .bx-wallet-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem;
+      border-bottom: 1px solid var(--bx-border);
+      font-family: 'SF Mono', Monaco, Consolas, monospace;
+      font-size: 0.875rem;
+    }
+
+    .bx-wallet-item:last-child {
+      border-bottom: none;
+    }
+
+    .bx-wallet-label {
+      font-weight: 600;
+      color: var(--bx-primary);
+      min-width: 3rem;
+      margin-right: 1rem;
+    }
+
+    .bx-wallet-addr {
+      color: var(--bx-text);
+      word-break: break-all;
+      flex: 1;
+      margin-right: 1rem;
+      font-size: 0.8rem;
+    }
+
+    .bx-copy-btn {
+      background: var(--bx-primary);
+      border: 1px solid var(--bx-primary);
+      color: var(--bx-primary-text);
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      font-weight: 500;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .bx-copy-btn:hover {
+      background: color-mix(in srgb, var(--bx-primary) 90%, white);
+    }
+
+    /* Responsive design with specific targeting */
+    @media (max-width: 1200px) {
+      #bitaxe-setter-panel .bx-sections-grid {
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)) !important;
+      }
     }
     
-    .bx-no-devices {
-      text-align: center; padding: 1.5rem;
-      color: #6c7086; font-size: 0.875rem;
-      font-style: italic;
+    @media (max-width: 768px) {
+      #bitaxe-setter-panel.bitaxe-setter-container {
+        margin: 1rem 0 !important;
+      }
+      
+      #bitaxe-setter-panel .bx-sections-grid {
+        grid-template-columns: 1fr !important;
+        gap: 1rem !important;
+      }
+      
+      #bitaxe-setter-panel .bx-flex-row {
+        flex-direction: column !important;
+        align-items: stretch !important;
+      }
+      
+      #bitaxe-setter-panel .bx-device-item {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 0.75rem !important;
+      }
+      
+      #bitaxe-setter-panel .bx-btn-group {
+        flex-direction: column !important;
+        align-items: stretch !important;
+      }
+      
+      #bitaxe-setter-panel .bx-actions-bar {
+        flex-direction: column !important;
+        align-items: stretch !important;
+      }
+      
+      #bitaxe-setter-panel .bx-panel-header {
+        padding: 1rem !important;
+      }
+      
+      #bitaxe-setter-panel .bx-panel-body {
+        padding: 1rem !important;
+      }
     }
   `); 
 
-  const btn = document.createElement("div");
-  btn.id = "bx-btn";
-  btn.textContent = "Bitaxe Setter";
-  document.body.appendChild(btn);
+  if (!isAxeOSPage()) {
+    const btn = document.createElement("div");
+    btn.id = "bx-btn";
+    btn.textContent = "Bitaxe Setter";
+    document.body.appendChild(btn);
+    btn.addEventListener("click", openUI);
+  }
 
   const donateBtn = document.createElement("div");
   donateBtn.id = "bx-donate";
   donateBtn.textContent = "💝 Donate";
   document.body.appendChild(donateBtn);
 
-  const overlay = document.createElement("div");
-  overlay.id = "bx-overlay";
+  const panel = document.createElement("div");
+  panel.id = "bitaxe-setter-panel";
+  panel.className = "bitaxe-setter-container";
+  panel.innerHTML = `
+    <div class="bx-panel-header">
+      <div class="bx-panel-title">⚡ Bitaxe Stratum Configuration</div>
+      <div class="bx-panel-subtitle">Configure multiple Bitaxe rigs with automatic device discovery</div>
+      <button class="bx-toggle-btn" id="bx-toggle">Configure Rigs</button>
+    </div>
+
+    <div class="bx-panel-body" id="bx-panel-body">
+      <div class="bx-sections-grid">
+        <!-- Device Management Section -->
+        <div class="bx-section">
+          <div class="bx-section-title">📱 Device Management</div>
+          <div class="bx-row">
+            <label class="bx-label">Discovered Devices</label>
+            <div id="bx-device-list"></div>
+          </div>
+          <div class="bx-btn-group">
+            <button class="bx-btn" id="bx-discover-devices">
+              <i>🔍</i> Discover Devices
+            </button>
+            <button class="bx-btn bx-btn-secondary bx-btn-small" id="bx-reset-devices">Reset</button>
+          </div>
+        </div>
+
+        <!-- Default Settings Section -->
+        <div class="bx-section">
+          <div class="bx-section-title">⚙️ Default Settings</div>
+          <div class="bx-row">
+            <label class="bx-label">Default Wallet Address</label>
+            <input class="bx-input" id="bx-default-wallet" placeholder="Enter your default wallet address..." />
+          </div>
+          <div class="bx-flex-row">
+            <div class="bx-row">
+              <label class="bx-label">Fallback Pool</label>
+              <input class="bx-input" id="bx-default-fallback-url" placeholder="pool.example.com" />
+            </div>
+            <div class="bx-row" style="flex: 0 0 120px;">
+              <label class="bx-label">Port</label>
+              <input class="bx-input" id="bx-default-fallback-port" type="number" placeholder="4444" />
+            </div>
+          </div>
+          <div class="bx-btn-group">
+            <button class="bx-btn bx-btn-small" id="bx-save-defaults">Save Defaults</button>
+            <button class="bx-btn bx-btn-secondary bx-btn-small" id="bx-reset-defaults">Reset</button>
+          </div>
+        </div>
+
+        <!-- Saved Configurations Section -->
+        <div class="bx-section">
+          <div class="bx-section-title">💾 Saved Configurations</div>
+          <div class="bx-row">
+            <label class="bx-label">Load Configuration</label>
+            <select class="bx-select" id="bx-config-select">
+              <option value="">Select a saved configuration...</option>
+            </select>
+          </div>
+          <div class="bx-btn-group">
+            <button class="bx-btn bx-btn-small" id="bx-load-config">Load</button>
+            <button class="bx-btn bx-btn-danger bx-btn-small" id="bx-delete-config">Delete</button>
+          </div>
+          <div class="bx-row">
+            <label class="bx-label">Save Current Settings</label>
+            <div class="bx-flex-row">
+              <input class="bx-input" id="bx-config-name" placeholder="Configuration name..." />
+              <button class="bx-btn bx-btn-small" id="bx-save-config" style="flex: 0 0 auto;">Save</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pool Settings Section -->
+        <div class="bx-section">
+          <div class="bx-section-title">🌊 Pool Settings</div>
+          <div class="bx-row">
+            <label class="bx-label">Mining Pool</label>
+            <input class="bx-input" id="bx-pool" placeholder="pool.example.com:4444" />
+          </div>
+          <div class="bx-row">
+            <label class="bx-label">Wallet Address</label>
+            <div class="bx-flex-row">
+              <input class="bx-input" id="bx-wallet" placeholder="Your wallet address" />
+              <button class="bx-btn bx-btn-secondary bx-btn-small" id="bx-load-defaults" style="flex: 0 0 auto;">Use Default</button>
+            </div>
+          </div>
+          <div class="bx-row">
+            <label class="bx-label">Password</label>
+            <input class="bx-input" id="bx-pass" value="x" placeholder="x or d=1000" />
+          </div>
+        </div>
+      </div>
+
+      <div class="bx-actions-bar">
+        <div class="bx-btn-group">
+          <button class="bx-btn bx-btn-secondary" id="bx-test">🧪 Test Settings</button>
+          <button class="bx-btn" id="bx-apply">🚀 Apply & Restart</button>
+        </div>
+        <div style="flex: 1;"></div>
+        <div class="bx-btn-group">
+          <span id="bx-device-count" style="color: var(--bx-text-secondary); font-size: 0.875rem;">0 devices ready</span>
+        </div>
+      </div>
+
+      <div class="bx-log" id="bx-log"></div>
+    </div>
+  `;
+
+  let overlay = null;
+
+  if (!isAxeOSPage()) {
+    overlay = document.createElement("div");
+    overlay.id = "bx-overlay";
   overlay.innerHTML = `
     <div id="bx-modal" role="dialog" aria-modal="true">
       <div id="bx-header">
@@ -513,7 +825,8 @@
       <div id="bx-log"></div>
     </div>
   `;
-  document.body.appendChild(overlay);
+    document.body.appendChild(overlay);
+  }
 
   const donateModal = document.createElement("div");
   donateModal.id = "bx-donate-modal";
@@ -559,7 +872,219 @@
   `;
   document.body.appendChild(donateModal);
 
-  const $ = (sel) => overlay.querySelector(sel);
+  const $ = (sel) => {
+    if (panel && panel.isConnected) {
+      return panel.querySelector(sel);
+    }
+    return overlay ? overlay.querySelector(sel) : null;
+  };
+
+  function isAxeOSPage() {
+    const indicators = [
+      () => document.querySelector('app-root'),
+      () => window.location.hash.includes('#/'),
+      () => document.title.toLowerCase().includes('axeos'),
+      () => document.querySelector('svg[aria-label="AxeOS"]'),
+      () => document.querySelector('[ng-version]'),
+      () => document.querySelector('.layout-wrapper'),
+      () => document.querySelector('app-')
+    ];
+    
+    return indicators.some(check => {
+      try {
+        return check();
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  function isSwarmPage() {
+    return window.location.hash === '#/swarm' && document.querySelector('app-swarm');
+  }
+
+  function injectPoolSettingsButton() {
+    const targetForm = document.querySelector('app-swarm form.card');
+    if (!targetForm || document.getElementById('bx-pool-settings-btn')) {
+      return false;
+    }
+
+    const poolSettingsBtn = document.createElement('button');
+    poolSettingsBtn.id = 'bx-pool-settings-btn';
+    poolSettingsBtn.className = 'p-element white-space-nowrap w-full md:w-auto block text-center button-text p-button p-component';
+    poolSettingsBtn.innerHTML = '⚙️ Pool Settings';
+    poolSettingsBtn.type = 'button';
+    
+    poolSettingsBtn.style.cssText = `
+      background: var(--primary-color, #4caf50) !important;
+      border-color: var(--primary-color, #4caf50) !important;
+      color: white !important;
+      margin-right: 1rem;
+      transition: all 0.2s ease !important;
+    `;
+
+    const autoScanBtn = targetForm.querySelector('button');
+    if (autoScanBtn) {
+      autoScanBtn.parentNode.insertBefore(poolSettingsBtn, autoScanBtn.nextSibling);
+    } else {
+      targetForm.insertBefore(poolSettingsBtn, targetForm.firstChild);
+    }
+
+    poolSettingsBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      togglePoolSettingsPanel(poolSettingsBtn);
+    });
+
+    console.log('Bitaxe Setter: Pool Settings button injected successfully');
+    return true;
+  }
+
+  function togglePoolSettingsPanel(button) {
+    const existingPanel = document.getElementById('bitaxe-setter-panel');
+    
+    if (existingPanel && existingPanel.style.display !== 'none') {
+      hidePoolSettingsPanel(button);
+    } else {
+      showPoolSettingsPanel(button);
+    }
+  }
+
+  function showPoolSettingsPanel(button) {
+    if (!document.getElementById('bitaxe-setter-panel')) {
+      injectPanelIntoPage();
+    }
+    
+    const panelElement = panel;
+    const panelBody = panel.querySelector('#bx-panel-body');
+    const toggleBtn = panel.querySelector('#bx-toggle');
+    
+    if (panelElement && panelBody) {
+      panelElement.style.display = 'block';
+      panelBody.classList.add('expanded');
+      if (toggleBtn) {
+        toggleBtn.textContent = 'Collapse';
+      }
+      
+      loadDevices();
+      refreshConfigSelect();
+      loadDefaultsUI();
+      updateDeviceDisplay();
+      updateDeviceCount();
+      logLine("Ready! Configure your pool settings and devices.");
+      
+      button.innerHTML = '✕ Close Pool Settings';
+      button.style.background = 'var(--red-500, #ef4444) !important';
+      button.style.borderColor = 'var(--red-500, #ef4444) !important';
+      
+      setTimeout(() => {
+        panelElement.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+      }, 100);
+    }
+  }
+
+  function hidePoolSettingsPanel(button) {
+    const panelElement = panel;
+    const panelBody = panel.querySelector('#bx-panel-body');
+    const toggleBtn = panel.querySelector('#bx-toggle');
+    
+    if (panelElement && panelBody) {
+      panelBody.classList.remove('expanded');
+      if (toggleBtn) {
+        toggleBtn.textContent = 'Configure Rigs';
+      }
+      
+      setTimeout(() => {
+        panelElement.style.display = 'none';
+      }, 300);
+      
+      button.innerHTML = '⚙️ Pool Settings';
+      button.style.background = 'var(--primary-color, #4caf50) !important';
+      button.style.borderColor = 'var(--primary-color, #4caf50) !important';
+    }
+  }
+
+  function injectPanelIntoPage() {
+    if (document.getElementById('bitaxe-setter-panel')) {
+      return true; // Already injected
+    }
+    
+    let insertTarget = null;
+    
+    if (isSwarmPage()) {
+      const swarmRoot = document.querySelector('app-swarm');
+      if (swarmRoot) {
+        insertTarget = swarmRoot;
+      }
+    }
+    
+    if (!insertTarget) {
+      const targetElements = [
+        document.querySelector('.layout-main'),
+        document.querySelector('.layout-main-container'),
+        document.querySelector('router-outlet'),
+        document.querySelector('app-design'),
+        document.querySelector('.card'),
+        document.querySelector('main'),
+        document.querySelector('[role="main"]'),
+        document.querySelector('.main-content'),
+        document.querySelector('.content')
+      ].filter(Boolean);
+      
+      for (const element of targetElements) {
+        if (element && element.offsetHeight > 0) {
+          insertTarget = element;
+          break;
+        }
+      }
+    }
+    
+    if (!insertTarget) {
+      insertTarget = document.body;
+    }
+    
+    if (insertTarget) {
+      panel.style.display = 'none';
+      insertTarget.appendChild(panel);
+      
+      initializePanel();
+      return true;
+    }
+    return false;
+  }
+
+  function initializePanel() {
+    const toggleBtn = panel.querySelector('#bx-toggle');
+    const panelBody = panel.querySelector('#bx-panel-body');
+    
+    if (toggleBtn && panelBody) {
+      toggleBtn.addEventListener('click', () => {
+        const isExpanded = panelBody.classList.contains('expanded');
+        if (isExpanded) {
+          panelBody.classList.remove('expanded');
+          toggleBtn.textContent = 'Configure Rigs';
+        } else {
+          panelBody.classList.add('expanded');
+          toggleBtn.textContent = 'Collapse';
+          loadDevices();
+          refreshConfigSelect();
+          loadDefaultsUI();
+          updateDeviceDisplay();
+          updateDeviceCount();
+          logLine("Ready! Configure your pool settings and devices.");
+        }
+      });
+    }
+  }
+
+  function updateDeviceCount() {
+    const deviceCount = panel.querySelector('#bx-device-count');
+    if (deviceCount) {
+      const count = RIGS.length;
+      deviceCount.textContent = `${count} device${count !== 1 ? 's' : ''} ready`;
+    }
+  }
 
   function getStoredDevices() {
     try {
@@ -569,11 +1094,13 @@
     }
   }
 
-  function saveDevices(devices) {
+  function saveDevices(devices, skipUIUpdate = false) {
     localStorage.setItem('bitaxe-devices', JSON.stringify(devices));
     RIGS = [...devices];
-    updateDeviceDisplay();
-    updateSubtitle();
+    if (!skipUIUpdate) {
+      updateDeviceDisplay();
+      updateSubtitle();
+    }
   }
 
   function loadDevices() {
@@ -662,11 +1189,12 @@
   }
   
   function updateDeviceDisplay() {
-    const deviceList = document.getElementById('bx-device-list');
+    const deviceList = panel.querySelector('#bx-device-list') || (overlay && overlay.querySelector('#bx-device-list'));
     if (!deviceList) return;
     
     if (RIGS.length === 0) {
-      deviceList.innerHTML = '<div class="bx-no-devices">No devices configured</div>';
+      deviceList.innerHTML = '<div class="bx-no-devices">No devices discovered yet. Click "Discover Devices" to scan your network.</div>';
+      updateDeviceCount();
       return;
     }
     
@@ -681,19 +1209,19 @@
               data-index="${index}" 
               value="${rig.worker}" 
               placeholder="Worker name"
-              style="padding: 0.5rem; font-size: 0.75rem; margin-top: 0.25rem; width: 100%;"
             />
           </div>
         </div>
-        <button class="bx-small-btn bx-delete bx-remove-device" data-index="${index}" title="Remove device">✕</button>
+        <button class="bx-btn bx-btn-danger bx-btn-small bx-remove-device" data-index="${index}" title="Remove device">✕</button>
       </div>
     `).join('');
     
     attachDeviceListeners();
+    updateDeviceCount();
   }
   
   function updateSubtitle() {
-    const subtitle = document.getElementById('bx-subtitle');
+    const subtitle = overlay && overlay.querySelector('#bx-subtitle');
     if (subtitle && RIGS.length > 0) {
       subtitle.textContent = `Applies to: ${RIGS.map(r => r.url.replace('http://', '')).join(', ')}`;
     } else if (subtitle) {
@@ -702,17 +1230,21 @@
   }
   
   function attachDeviceListeners() {
-    const deviceList = document.getElementById('bx-device-list');
+    const deviceList = panel.querySelector('#bx-device-list') || (overlay && overlay.querySelector('#bx-device-list'));
     if (!deviceList) return;
     
     const oldClickListener = deviceList._removeDeviceListener;
     const oldInputListener = deviceList._workerInputListener;
+    const oldBlurListener = deviceList._workerBlurListener;
     
     if (oldClickListener) {
       deviceList.removeEventListener('click', oldClickListener);
     }
     if (oldInputListener) {
       deviceList.removeEventListener('input', oldInputListener);
+    }
+    if (oldBlurListener) {
+      deviceList.removeEventListener('blur', oldBlurListener, true);
     }
     
     const newClickListener = (e) => {
@@ -727,11 +1259,22 @@
     const newInputListener = (e) => {
       if (e.target.classList.contains('bx-worker-input')) {
         const index = parseInt(e.target.getAttribute('data-index'), 10);
+        const newWorkerName = e.target.value;
+        
+        if (!isNaN(index) && typeof newWorkerName === 'string') {
+          RIGS[index].worker = newWorkerName;
+        }
+      }
+    };
+    
+    const newBlurListener = (e) => {
+      if (e.target.classList.contains('bx-worker-input')) {
+        const index = parseInt(e.target.getAttribute('data-index'), 10);
         const newWorkerName = e.target.value.trim();
         
         if (!isNaN(index) && newWorkerName) {
           RIGS[index].worker = newWorkerName;
-          saveDevices(RIGS);
+          saveDevices(RIGS, true);
           logLine(`✏️ Updated worker name for ${RIGS[index].url} to: ${newWorkerName}`);
         }
       }
@@ -739,9 +1282,11 @@
     
     deviceList._removeDeviceListener = newClickListener;
     deviceList._workerInputListener = newInputListener;
+    deviceList._workerBlurListener = newBlurListener;
     
     deviceList.addEventListener('click', newClickListener);
     deviceList.addEventListener('input', newInputListener);
+    deviceList.addEventListener('blur', newBlurListener, true);
   }
   
   function removeDevice(index) {
@@ -777,6 +1322,8 @@
 
   function refreshConfigSelect() {
     const select = $("#bx-config-select");
+    if (!select) return;
+    
     const configs = getConfigs();
     const currentValue = select.value;
     
@@ -794,27 +1341,44 @@
   }
 
   function getCurrentConfig() {
+    const poolEl = $("#bx-pool");
+    const walletEl = $("#bx-wallet");
+    const passEl = $("#bx-pass");
+    
     return {
-      pool: $("#bx-pool").value.trim(),
-      wallet: $("#bx-wallet").value.trim(),
-      password: $("#bx-pass").value.trim()
+      pool: poolEl ? poolEl.value.trim() : "",
+      wallet: walletEl ? walletEl.value.trim() : "",
+      password: passEl ? passEl.value.trim() : "x"
     };
   }
 
   function loadConfigData(config) {
-    $("#bx-pool").value = config.pool || "";
-    $("#bx-wallet").value = config.wallet || "";
-    $("#bx-pass").value = config.password || "x";
+    const poolEl = $("#bx-pool");
+    const walletEl = $("#bx-wallet");
+    const passEl = $("#bx-pass");
+    
+    if (poolEl) poolEl.value = config.pool || "";
+    if (walletEl) walletEl.value = config.wallet || "";
+    if (passEl) passEl.value = config.password || "x";
   }
 
   function openUI() {
+    if (isAxeOSPage() && injectPanelIntoPage()) {
+      const panelBody = panel.querySelector('#bx-panel-body');
+      if (panelBody && !panelBody.classList.contains('expanded')) {
+        panel.querySelector('#bx-toggle')?.click();
+      }
+      return;
+    }
+
+    if (!overlay) return;
     overlay.style.display = "flex";
     refreshConfigSelect();
     loadDevices();
     loadDefaultsUI();
     updateDeviceDisplay();
     updateSubtitle();
-    $("#bx-pool").focus();
+    $("#bx-pool")?.focus();
     logLine("Ready! Enter pool:port + wallet, or load a saved config.");
     logLine("Workers auto-set as {wallet}.{hostname} using device's actual hostname.");
     logLine("Tip: Click 'Discover Devices' to scan for Bitaxe rigs automatically.");
@@ -822,12 +1386,20 @@
   }
 
   function closeUI() {
-    overlay.style.display = "none";
+    if (overlay) overlay.style.display = "none";
+    
+    const panelBody = panel.querySelector('#bx-panel-body');
+    const toggleBtn = panel.querySelector('#bx-toggle');
+    if (panelBody?.classList.contains('expanded')) {
+      panelBody.classList.remove('expanded');
+      if (toggleBtn) toggleBtn.textContent = 'Configure Rigs';
+    }
   }
 
-  btn.addEventListener("click", openUI);
-  $("#bx-close").addEventListener("click", closeUI);
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) closeUI(); });
+  if (overlay) {
+    overlay.querySelector("#bx-close")?.addEventListener("click", closeUI);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) closeUI(); });
+  }
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       if (overlay.style.display === "flex") closeUI();
@@ -835,8 +1407,11 @@
     }
   });
 
-  $("#bx-save-config").addEventListener("click", () => {
-    const name = $("#bx-config-name").value.trim();
+  $("#bx-save-config")?.addEventListener("click", () => {
+    const configNameEl = $("#bx-config-name");
+    if (!configNameEl) return;
+    
+    const name = configNameEl.value.trim();
     if (!name) return logLine("❌ Please enter a config name.");
     
     const config = getCurrentConfig();
@@ -845,12 +1420,15 @@
     }
     
     saveConfig(name, config);
-    $("#bx-config-name").value = "";
+    configNameEl.value = "";
     logLine(`✅ Config "${name}" saved successfully.`);
   });
 
-  $("#bx-load-config").addEventListener("click", () => {
-    const name = $("#bx-config-select").value;
+  $("#bx-load-config")?.addEventListener("click", () => {
+    const configSelectEl = $("#bx-config-select");
+    if (!configSelectEl) return;
+    
+    const name = configSelectEl.value;
     if (!name) return logLine("❌ Please select a config to load.");
     
     const configs = getConfigs();
@@ -861,8 +1439,11 @@
     logLine(`✅ Config "${name}" loaded successfully.`);
   });
 
-  $("#bx-delete-config").addEventListener("click", () => {
-    const name = $("#bx-config-select").value;
+  $("#bx-delete-config")?.addEventListener("click", () => {
+    const configSelectEl = $("#bx-config-select");
+    if (!configSelectEl) return;
+    
+    const name = configSelectEl.value;
     if (!name) return logLine("❌ Please select a config to delete.");
     
     if (!confirm(`Delete config "${name}"? This cannot be undone.`)) return;
@@ -871,21 +1452,24 @@
     logLine(`✅ Config "${name}" deleted successfully.`);
   });
 
-  $("#bx-config-select").addEventListener("dblclick", () => {
-    $("#bx-load-config").click();
+  $("#bx-config-select")?.addEventListener("dblclick", () => {
+    $("#bx-load-config")?.click();
   });
 
-  $("#bx-discover-devices").addEventListener("click", async () => {
-    $("#bx-discover-devices").textContent = "Discovering...";
-    $("#bx-discover-devices").disabled = true;
-    
-    await discoverDevices();
-    
-    $("#bx-discover-devices").textContent = "Discover Devices";
-    $("#bx-discover-devices").disabled = false;
+  $("#bx-discover-devices")?.addEventListener("click", async () => {
+    const discoverBtn = $("#bx-discover-devices");
+    if (discoverBtn) {
+      discoverBtn.innerHTML = "🔍 Discovering...";
+      discoverBtn.disabled = true;
+      
+      await discoverDevices();
+      
+      discoverBtn.innerHTML = "🔍 Discover Devices";
+      discoverBtn.disabled = false;
+    }
   });
 
-  $("#bx-reset-devices").addEventListener("click", () => {
+  $("#bx-reset-devices")?.addEventListener("click", () => {
     if (confirm('Reset to default devices? This will replace your discovered devices.')) {
       const userDefaults = getUserDefaults();
       saveDevices(userDefaults.defaultRigs);
@@ -893,10 +1477,16 @@
     }
   });
 
-  $("#bx-save-defaults").addEventListener("click", () => {
-    const defaultWallet = $("#bx-default-wallet").value.trim();
-    const fallbackURL = $("#bx-default-fallback-url").value.trim();
-    const fallbackPort = parseInt($("#bx-default-fallback-port").value) || 42069;
+  $("#bx-save-defaults")?.addEventListener("click", () => {
+    const defaultWalletEl = $("#bx-default-wallet");
+    const fallbackURLEl = $("#bx-default-fallback-url");
+    const fallbackPortEl = $("#bx-default-fallback-port");
+    
+    if (!defaultWalletEl || !fallbackURLEl || !fallbackPortEl) return;
+    
+    const defaultWallet = defaultWalletEl.value.trim();
+    const fallbackURL = fallbackURLEl.value.trim();
+    const fallbackPort = parseInt(fallbackPortEl.value) || 42069;
     
     if (!fallbackURL) {
       return logLine("❌ Please enter a fallback URL.");
@@ -911,7 +1501,7 @@
     logLine(`✅ Default settings saved successfully.`);
   });
   
-  $("#bx-reset-defaults").addEventListener("click", () => {
+  $("#bx-reset-defaults")?.addEventListener("click", () => {
     if (confirm('Reset all defaults to factory settings? This cannot be undone.')) {
       localStorage.removeItem('bitaxe-user-defaults');
       loadDefaultsUI();
@@ -919,10 +1509,13 @@
     }
   });
 
-  $("#bx-load-defaults").addEventListener("click", () => {
+  $("#bx-load-defaults")?.addEventListener("click", () => {
+    const walletEl = $("#bx-wallet");
+    if (!walletEl) return;
+    
     const userDefaults = getUserDefaults();
     if (userDefaults.defaultWallet) {
-      $("#bx-wallet").value = userDefaults.defaultWallet;
+      walletEl.value = userDefaults.defaultWallet;
       logLine(`✅ Loaded default wallet: ${userDefaults.defaultWallet}`);
     } else {
       logLine("ℹ️ No default wallet configured. Set one in Default Settings.");
@@ -967,11 +1560,24 @@
 
   function logLine(msg) {
     const log = $("#bx-log");
+    if (!log) return;
+    
     const ts = new Date().toLocaleTimeString();
     log.textContent += `[${ts}] ${msg}\n`;
     log.scrollTop = log.scrollHeight;
+    
+    if (!log.classList.contains('visible') && log.textContent.trim()) {
+      log.classList.add('visible');
+    }
   }
-  function clearLog() { $("#bx-log").textContent = ""; }
+  
+  function clearLog() { 
+    const log = $("#bx-log");
+    if (log) {
+      log.textContent = "";
+      log.classList.remove('visible');
+    }
+  }
 
   function parsePoolPort(input) {
     const trimmed = String(input || "").trim();
@@ -1032,17 +1638,27 @@
 
   function loadDefaultsUI() {
     const userDefaults = getUserDefaults();
-    $("#bx-default-wallet").value = userDefaults.defaultWallet;
-    $("#bx-default-fallback-url").value = userDefaults.fallbackStratumURL;
-    $("#bx-default-fallback-port").value = userDefaults.fallbackStratumPort;
+    const defaultWalletEl = $("#bx-default-wallet");
+    const defaultFallbackUrlEl = $("#bx-default-fallback-url");
+    const defaultFallbackPortEl = $("#bx-default-fallback-port");
+    
+    if (defaultWalletEl) defaultWalletEl.value = userDefaults.defaultWallet;
+    if (defaultFallbackUrlEl) defaultFallbackUrlEl.value = userDefaults.fallbackStratumURL;
+    if (defaultFallbackPortEl) defaultFallbackPortEl.value = userDefaults.fallbackStratumPort;
   }
 
-  $("#bx-test").addEventListener("click", () => {
+  $("#bx-test")?.addEventListener("click", () => {
     clearLog();
 
-    const poolPort = parsePoolPort($("#bx-pool").value);
-    const wallet = $("#bx-wallet").value.trim();
-    const pass = ($("#bx-pass").value || "x").trim() || "x";
+    const poolEl = $("#bx-pool");
+    const walletEl = $("#bx-wallet");
+    const passEl = $("#bx-pass");
+    
+    if (!poolEl || !walletEl || !passEl) return;
+
+    const poolPort = parsePoolPort(poolEl.value);
+    const wallet = walletEl.value.trim();
+    const pass = (passEl.value || "x").trim() || "x";
 
     if (!poolPort || poolPort.port === null) return logLine("❌ Please enter pool:port (port required).");
     if (!wallet) return logLine("❌ Please enter wallet address.");
@@ -1059,7 +1675,7 @@
     logLine(`💡 Tip: Use password for difficulty (e.g., "d=1000" or "x")`);
   });
 
-  $("#bx-apply").addEventListener("click", async () => {
+  $("#bx-apply")?.addEventListener("click", async () => {
     clearLog();
 
     const poolPort = parsePoolPort($("#bx-pool").value);
@@ -1116,4 +1732,45 @@
   });
 
   loadDevices();
+
+  function attemptInjection() {
+    if (isAxeOSPage()) {
+      if (isSwarmPage() && !document.getElementById('bx-pool-settings-btn')) {
+        const buttonInjected = injectPoolSettingsButton();
+        if (buttonInjected) {
+          console.log('Bitaxe Setter: Pool Settings button injected successfully');
+        }
+      }
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(attemptInjection, 1000);
+    });
+  } else {
+    setTimeout(attemptInjection, 1000);
+  }
+
+  if (isAxeOSPage()) {
+    let currentPath = window.location.hash;
+    const routeWatcher = setInterval(() => {
+      if (window.location.hash !== currentPath) {
+        currentPath = window.location.hash;
+        console.log('Bitaxe Setter: Route change detected, re-injecting components');
+        setTimeout(attemptInjection, 500);
+      }
+    }, 1000);
+
+    const observer = new MutationObserver(() => {
+      if (isSwarmPage() && !document.getElementById('bx-pool-settings-btn')) {
+        setTimeout(attemptInjection, 200);
+      }
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
 })();
