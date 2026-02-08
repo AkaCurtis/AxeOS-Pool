@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Bitaxe Quick Stratum Setter (UI) - Wallet + Auto Worker
 // @namespace    https://tampermonkey.net/
-// @version      2.0.0
-// @description  Click button -> clean UI -> set stratum pool/port + wallet on multiple Bitaxe rigs. Auto-sets user as {wallet}.bitaxe1/2/3, then restarts.
+// @version      2.1.0
+// @description  Click button -> clean UI -> set stratum pool/port + wallet on multiple Bitaxe rigs. Auto-discovers devices and uses their hostname as worker name, then restarts.
 // @author       GitHub Copilot
-// @match        http://192.168.4.*/*
-// @match        http://192.168.1.*/*
-// @match        http://10.0.0.*/*
-// @match        http://172.16.*.*/*
+// @match        http://192.168.*.*/*
+// @match        http://10.*.*.*/*
+// @match        http://172.*.*.*/*
+// @match        http://*/*
 // @grant        GM_addStyle
 // @run-at       document-end
 // @updateURL    none
@@ -46,6 +46,17 @@
 
   function saveUserDefaults(defaults) {
     localStorage.setItem('bitaxe-user-defaults', JSON.stringify(defaults));
+  }
+
+  function detectLocalSubnet() {
+    const hostname = window.location.hostname;
+    
+    const ipMatch = hostname.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})\.(\d{1,3})$/);
+    if (ipMatch) {
+      return ipMatch[1] + '.';
+    }
+    
+    return '192.168.1.';
   }
 
   GM_addStyle(`
@@ -362,6 +373,26 @@
       font-weight: 450;
     }
     
+    .bx-worker-input {
+      background: #11111b !important;
+      border: 1px solid #313244 !important;
+      color: #cdd6f4 !important;
+      border-radius: 6px !important;
+      padding: 0.5rem !important;
+      font-size: 0.75rem !important;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+    
+    .bx-worker-input:focus {
+      border-color: #89b4fa !important;
+      box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.12) !important;
+      outline: none !important;
+    }
+    
+    .bx-worker-input:hover {
+      border-color: #45475a !important;
+    }
+    
     .bx-no-devices {
       text-align: center; padding: 1.5rem;
       color: #6c7086; font-size: 0.875rem;
@@ -406,13 +437,6 @@
               </div>
               <div class="bx-config-buttons">
                 <button class="bx-small-btn" id="bx-reset-devices" title="Reset to defaults">Reset</button>
-              </div>
-            </div>
-            <div class="bx-row">
-              <div class="bx-label">Manual Device Entry</div>
-              <div style="display: flex; gap: 0.75rem;">
-                <input class="bx-input" id="bx-manual-device" style="flex: 1;" placeholder="192.168.1.100 or 192.168.1.100:8080" />
-                <button class="bx-small-btn" id="bx-add-device" title="Add device manually">Add</button>
               </div>
             </div>
           </div>
@@ -546,18 +570,10 @@
   }
 
   function saveDevices(devices) {
-    try {
-      console.log('saveDevices called with:', devices);
-      localStorage.setItem('bitaxe-devices', JSON.stringify(devices));
-      RIGS = [...devices];
-      console.log('RIGS updated to:', RIGS);
-      updateDeviceDisplay();
-      updateSubtitle();
-      console.log('saveDevices completed successfully');
-    } catch (error) {
-      console.error('Error in saveDevices:', error);
-      throw error;
-    }
+    localStorage.setItem('bitaxe-devices', JSON.stringify(devices));
+    RIGS = [...devices];
+    updateDeviceDisplay();
+    updateSubtitle();
   }
 
   function loadDevices() {
@@ -570,99 +586,50 @@
   async function discoverDevices() {
     logLine("🔍 Discovering Bitaxe devices...");
     
+    const detectedSubnet = detectLocalSubnet();
+    logLine(`   Detected subnet: ${detectedSubnet}x`);
     logLine(`   Scanning network for Bitaxe devices...`);
-    await scanNetworkRange();
+    
+    await scanNetworkRange(detectedSubnet);
   }
   
-  async function scanNetworkRange() {
-    const ipRanges = ['192.168.4.', '192.168.1.', '10.0.0.', '172.16.0.'];
+  async function scanNetworkRange(baseIp) {
+    if (!baseIp) {
+      baseIp = detectLocalSubnet();
+    }
+    
     const devices = [];
     let found = 0;
     
-    logLine(`   Scanning multiple IP ranges for Bitaxe devices...`);
-    logLine(`   Using 300ms timeout per device, optimized for local network`);
+    logLine(`   Scanning ${baseIp}1-254...`);
     
-    const rangePromises = ipRanges.map(async (baseIp) => {
-      logLine(`   Scanning ${baseIp}1-254...`);
-      const rangeDevices = [];
-      
-      const batchSize = 50;
-      const batches = [];
-      
-      for (let start = 1; start <= 254; start += batchSize) {
-        const end = Math.min(start + batchSize - 1, 254);
-        batches.push({ start, end });
-      }
-      
-      const batchPromises = batches.map(async (batch) => {
-        const promises = [];
-        for (let i = batch.start; i <= batch.end; i++) {
-          const ip = `${baseIp}${i}`;
-          promises.push(testDevice(ip));
-        }
+    const promises = [];
+    for (let i = 1; i <= 254; i++) {
+      const ip = `${baseIp}${i}`;
+      promises.push(testDevice(ip));
+    }
+    
+    const results = await Promise.allSettled(promises);
+    
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled' && result.value) {
+        found++;
+        const ip = `${baseIp}${index + 1}`;
+        const hostname = result.value;
         
-        const results = await Promise.allSettled(promises);
-        
-        results.forEach((result, index) => {
-          if (result.status === 'fulfilled' && result.value) {
-            const ip = `${baseIp}${batch.start + index}`;
-            const deviceInfo = result.value;
-            
-            const deviceUrl = `http://${ip}${deviceInfo.port !== 80 ? ':' + deviceInfo.port : ''}`;
-            
-            rangeDevices.push({
-              url: deviceUrl,
-              worker: `bitaxe${++found}`
-            });
-            
-            logLine(`   ✅ Found Bitaxe at ${ip}:${deviceInfo.port} via ${deviceInfo.endpoint}`);
-          }
+        devices.push({
+          url: `http://${ip}`,
+          worker: hostname
         });
-      });
-      
-      await Promise.all(batchPromises);
-      
-      if (rangeDevices.length > 0) {
-        logLine(`   Completed ${baseIp}x range: ${rangeDevices.length} device(s) found`);
+        logLine(`   Found device at ${ip} (${hostname})`);
       }
-      
-      return rangeDevices;
     });
-    
-    const rangeResults = await Promise.all(rangePromises);
-    
-    rangeResults.forEach(rangeDevices => {
-      devices.push(...rangeDevices);
-    });
-    
-    logLine(`   Scan complete: tested ${ipRanges.length} IP ranges`);
-    logLine(`   Total devices found: ${devices.length}`);
     
     if (devices.length > 0) {
-      logLine(`✅ Network scan found ${devices.length} device(s) total`);
-      logLine(`   Saving devices to device list...`);
-      
-      try {
-        console.log('About to save devices:', devices);
-        saveDevices(devices);
-        logLine(`✅ Successfully added ${devices.length} device(s) to device management`);
-        logLine(`   Current device list: ${RIGS.map(r => r.url.replace('http://', '')).join(', ')}`);
-        
-        updateSubtitle();
-        updateDeviceDisplay();
-        
-      } catch (error) {
-        console.error('Error saving devices:', error);
-        logLine(`❌ Error saving devices: ${error.message}`);
-        logLine(`   Devices detected but not saved. You can add them manually.`);
-      }
+      logLine(`✅ Network scan found ${devices.length} device(s)`);
+      saveDevices(devices);
     } else {
       logLine(`❌ Network scan found no devices`);
-      logLine(`   Possible reasons:`);
-      logLine(`   • Devices are on a different network/VLAN`);
-      logLine(`   • Devices are using non-standard ports`);
-      logLine(`   • Network firewall blocking requests`);
-      logLine(`   • Devices are powered off or not responding`);
       logLine(`   Using default configuration`);
       const userDefaults = getUserDefaults();
       RIGS = userDefaults.defaultRigs;
@@ -671,117 +638,120 @@
   }
   
   async function testDevice(ip) {
-    const commonPorts = [80, 8080];
-    const endpoints = [
-      '/api/system/info',
-      '/api/system'
-    ];
-    
-    for (const port of commonPorts) {
-      for (const endpoint of endpoints) {
-        try {
-          const url = `http://${ip}:${port}${endpoint}`;
-          const response = await fetch(url, {
-            method: 'GET',
-            timeout: 300,
-            signal: AbortSignal.timeout(300),
-            headers: {
-              'Accept': 'application/json, text/html, */*'
-            }
-          });
-          
-          if (response.ok) {
-            const contentType = response.headers.get('content-type');
-            let data;
-            
-            if (contentType && contentType.includes('application/json')) {
-              data = await response.json();
-            } else {
-              data = await response.text();
-            }
-            
-            const dataStr = typeof data === 'string' ? data.toLowerCase() : JSON.stringify(data).toLowerCase();
-            
-            if (dataStr.includes('bitaxe') || 
-                dataStr.includes('asic') ||
-                dataStr.includes('miner') ||
-                dataStr.includes('hashrate') ||
-                dataStr.includes('stratum') ||
-                (data && typeof data === 'object' && (
-                  data.ASICModel || data.model || data.boardVersion ||
-                  data.stratumURL || data.hashRate || data.power
-                ))) {
-              
-              return { ip, port, endpoint, data };
-            }
-          }
-        } catch (error) {
-          continue;
+    try {
+      const response = await fetch(`http://${ip}/api/system/info`, {
+        method: 'GET',
+        timeout: 2000,
+        signal: AbortSignal.timeout(2000)
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const isBitaxe = data.ASICModel || data.model || data.boardVersion || 
+                         JSON.stringify(data).toLowerCase().includes('bitaxe');
+        
+        if (isBitaxe) {
+          const hostname = data.hostname || data.deviceName || data.name || 
+                          data.ssid || `bitaxe-${ip.split('.').pop()}`;
+          return hostname;
         }
       }
+    } catch {
     }
-    
-    return false;
+    return null;
   }
   
   function updateDeviceDisplay() {
     const deviceList = document.getElementById('bx-device-list');
-    console.log('updateDeviceDisplay called, deviceList element:', deviceList);
-    console.log('Current RIGS:', RIGS);
-    
-    if (!deviceList) {
-      console.error('Device list element not found!');
-      return;
-    }
+    if (!deviceList) return;
     
     if (RIGS.length === 0) {
       deviceList.innerHTML = '<div class="bx-no-devices">No devices configured</div>';
-      console.log('No devices - showing empty state');
       return;
     }
     
-    const htmlContent = RIGS.map((rig, index) => `
-      <div class="bx-device-item" data-index="${index}">
+    deviceList.innerHTML = RIGS.map((rig, index) => `
+      <div class="bx-device-item">
         <div class="bx-device-info">
           <div class="bx-device-url">${rig.url.replace('http://', '')}</div>
-          <div class="bx-device-worker">${rig.worker}</div>
+          <div class="bx-device-worker">
+            <input 
+              type="text" 
+              class="bx-input bx-worker-input" 
+              data-index="${index}" 
+              value="${rig.worker}" 
+              placeholder="Worker name"
+              style="padding: 0.5rem; font-size: 0.75rem; margin-top: 0.25rem; width: 100%;"
+            />
+          </div>
         </div>
         <button class="bx-small-btn bx-delete bx-remove-device" data-index="${index}" title="Remove device">✕</button>
       </div>
     `).join('');
     
-    console.log('Generated device HTML:', htmlContent);
-    deviceList.innerHTML = htmlContent;
-    
-    deviceList.querySelectorAll('.bx-remove-device').forEach(btn => {
-      btn.addEventListener('click', function() {
-        const index = parseInt(this.getAttribute('data-index'));
-        removeDevice(index);
-      });
-    });
-    
-    console.log('Device display updated with', RIGS.length, 'devices');
+    attachDeviceListeners();
   }
   
   function updateSubtitle() {
     const subtitle = document.getElementById('bx-subtitle');
     if (subtitle && RIGS.length > 0) {
       subtitle.textContent = `Applies to: ${RIGS.map(r => r.url.replace('http://', '')).join(', ')}`;
+    } else if (subtitle) {
+      subtitle.textContent = 'No devices configured';
     }
+  }
+  
+  function attachDeviceListeners() {
+    const deviceList = document.getElementById('bx-device-list');
+    if (!deviceList) return;
+    
+    const oldClickListener = deviceList._removeDeviceListener;
+    const oldInputListener = deviceList._workerInputListener;
+    
+    if (oldClickListener) {
+      deviceList.removeEventListener('click', oldClickListener);
+    }
+    if (oldInputListener) {
+      deviceList.removeEventListener('input', oldInputListener);
+    }
+    
+    const newClickListener = (e) => {
+      if (e.target.classList.contains('bx-remove-device')) {
+        const index = parseInt(e.target.getAttribute('data-index'), 10);
+        if (!isNaN(index)) {
+          removeDevice(index);
+        }
+      }
+    };
+    
+    const newInputListener = (e) => {
+      if (e.target.classList.contains('bx-worker-input')) {
+        const index = parseInt(e.target.getAttribute('data-index'), 10);
+        const newWorkerName = e.target.value.trim();
+        
+        if (!isNaN(index) && newWorkerName) {
+          RIGS[index].worker = newWorkerName;
+          saveDevices(RIGS);
+          logLine(`✏️ Updated worker name for ${RIGS[index].url} to: ${newWorkerName}`);
+        }
+      }
+    };
+    
+    deviceList._removeDeviceListener = newClickListener;
+    deviceList._workerInputListener = newInputListener;
+    
+    deviceList.addEventListener('click', newClickListener);
+    deviceList.addEventListener('input', newInputListener);
   }
   
   function removeDevice(index) {
     if (index >= 0 && index < RIGS.length) {
-      const removedDevice = RIGS[index];
+      const removed = RIGS[index];
       RIGS.splice(index, 1);
       saveDevices(RIGS);
-      updateDeviceDisplay();
-      updateSubtitle();
-      logLine(`🗑️ Removed device: ${removedDevice.url.replace('http://', '')}`);
+      logLine(`🗑️ Removed device: ${removed.url} (${removed.worker})`);
     }
   }
-  
-  window.removeDevice = removeDevice;
 
   function getConfigs() {
     try {
@@ -846,8 +816,8 @@
     updateSubtitle();
     $("#bx-pool").focus();
     logLine("Ready! Enter pool:port + wallet, or load a saved config.");
-    logLine("Workers auto-set as wallet.bitaxe1/2/3. Use password for difficulty (e.g., d=1000).");
-    logLine("Tip: Click 'Auto-Discover Devices' to scan for Bitaxe rigs automatically.");
+    logLine("Workers auto-set as {wallet}.{hostname} using device's actual hostname.");
+    logLine("Tip: Click 'Discover Devices' to scan for Bitaxe rigs automatically.");
     logLine("Tip: Configure your defaults in the 'Default Settings' section.");
   }
 
@@ -918,52 +888,8 @@
   $("#bx-reset-devices").addEventListener("click", () => {
     if (confirm('Reset to default devices? This will replace your discovered devices.')) {
       const userDefaults = getUserDefaults();
-      RIGS = [...userDefaults.defaultRigs];
-      saveDevices(RIGS);
-      updateDeviceDisplay();
-      updateSubtitle();
+      saveDevices(userDefaults.defaultRigs);
       logLine('🔄 Reset to default devices');
-      logLine(`   Loaded ${RIGS.length} default device(s)`);
-    }
-  });
-
-  $("#bx-add-device").addEventListener("click", () => {
-    const deviceInput = $("#bx-manual-device").value.trim();
-    if (!deviceInput) {
-      return logLine("❌ Please enter an IP address or IP:port");
-    }
-    
-    let ip, port = 80;
-    if (deviceInput.includes(':')) {
-      [ip, port] = deviceInput.split(':');
-      port = parseInt(port) || 80;
-    } else {
-      ip = deviceInput;
-    }
-    
-    if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) {
-      return logLine("❌ Invalid IP address format");
-    }
-    
-    const url = `http://${ip}${port !== 80 ? ':' + port : ''}`;
-    const workerNum = RIGS.length + 1;
-    
-    RIGS.push({
-      url: url,
-      worker: `bitaxe${workerNum}`
-    });
-    
-    saveDevices(RIGS);
-    updateDeviceDisplay();
-    updateSubtitle();
-    
-    $("#bx-manual-device").value = "";
-    logLine(`✅ Added device manually: ${url} → bitaxe${workerNum}`);
-  });
-
-  $("#bx-manual-device").addEventListener("keypress", (e) => {
-    if (e.key === "Enter") {
-      $("#bx-add-device").click();
     }
   });
 
@@ -1106,14 +1032,9 @@
 
   function loadDefaultsUI() {
     const userDefaults = getUserDefaults();
-    
-    const defaultWalletEl = $("#bx-default-wallet");
-    const fallbackUrlEl = $("#bx-default-fallback-url");
-    const fallbackPortEl = $("#bx-default-fallback-port");
-    
-    if (defaultWalletEl) defaultWalletEl.value = userDefaults.defaultWallet;
-    if (fallbackUrlEl) fallbackUrlEl.value = userDefaults.fallbackStratumURL;
-    if (fallbackPortEl) fallbackPortEl.value = userDefaults.fallbackStratumPort;
+    $("#bx-default-wallet").value = userDefaults.defaultWallet;
+    $("#bx-default-fallback-url").value = userDefaults.fallbackStratumURL;
+    $("#bx-default-fallback-port").value = userDefaults.fallbackStratumPort;
   }
 
   $("#bx-test").addEventListener("click", () => {
