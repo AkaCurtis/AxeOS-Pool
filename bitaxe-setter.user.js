@@ -3,10 +3,15 @@
 // @namespace    https://tampermonkey.net/
 // @version      2.0.0
 // @description  Click button -> clean UI -> set stratum pool/port + wallet on multiple Bitaxe rigs. Auto-sets user as {wallet}.bitaxe1/2/3, then restarts.
+// @author       GitHub Copilot
 // @match        http://192.168.4.*/*
-// @match        http://*/*
+// @match        http://192.168.1.*/*
+// @match        http://10.0.0.*/*
+// @match        http://172.16.*.*/*
 // @grant        GM_addStyle
 // @run-at       document-end
+// @updateURL    none
+// @downloadURL  none
 // ==/UserScript==
 
 (() => {
