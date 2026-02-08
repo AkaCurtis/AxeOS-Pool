@@ -644,7 +644,6 @@
         logLine(`   Current device list: ${RIGS.map(r => r.url.replace('http://', '')).join(', ')}`);
         
         updateSubtitle();
-        
         updateDeviceDisplay();
         
       } catch (error) {
@@ -1110,7 +1109,7 @@
     if (defaultWalletEl) defaultWalletEl.value = userDefaults.defaultWallet;
     if (fallbackUrlEl) fallbackUrlEl.value = userDefaults.fallbackStratumURL;
     if (fallbackPortEl) fallbackPortEl.value = userDefaults.fallbackStratumPort;
-      }
+  }
 
   $("#bx-test").addEventListener("click", () => {
     clearLog();
