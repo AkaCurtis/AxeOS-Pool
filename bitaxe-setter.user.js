@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bitaxe Quick Stratum Setter (Integrated UI) - Wallet + Auto Worker
 // @namespace    https://tampermonkey.net/
-// @version      3.0.0
+// @version      4.0.0
 // @description  Integrated UI for configuring multiple Bitaxe rigs. Auto-discovers devices, bulk configuration, and matches device theme.
 // @author       Curtis
 // @match        http://192.168.*.*/*
@@ -1076,6 +1076,9 @@
         }
       });
     }
+    
+    // Initialize all event listeners for the panel
+    setupEventListeners();
   }
 
   function updateDeviceCount() {
@@ -1362,6 +1365,248 @@
     if (passEl) passEl.value = config.password || "x";
   }
 
+  function setupEventListeners() {
+    // Save config
+    const saveConfigBtn = $("#bx-save-config");
+    if (saveConfigBtn) {
+      saveConfigBtn.addEventListener("click", () => {
+        const configNameEl = $("#bx-config-name");
+        if (!configNameEl) return;
+        
+        const name = configNameEl.value.trim();
+        if (!name) return logLine("❌ Please enter a config name.");
+        
+        const config = getCurrentConfig();
+        if (!config.pool || !config.wallet) {
+          return logLine("❌ Please fill in pool and wallet before saving.");
+        }
+        
+        saveConfig(name, config);
+        configNameEl.value = "";
+        logLine(`✅ Config "${name}" saved successfully.`);
+      });
+    }
+
+    // Load config
+    const loadConfigBtn = $("#bx-load-config");
+    if (loadConfigBtn) {
+      loadConfigBtn.addEventListener("click", () => {
+        const configSelectEl = $("#bx-config-select");
+        if (!configSelectEl) return;
+        
+        const name = configSelectEl.value;
+        if (!name) return logLine("❌ Please select a config to load.");
+        
+        const configs = getConfigs();
+        const config = configs[name];
+        if (!config) return logLine("❌ Config not found.");
+        
+        loadConfigData(config);
+        logLine(`✅ Config "${name}" loaded successfully.`);
+      });
+    }
+
+    // Delete config
+    const deleteConfigBtn = $("#bx-delete-config");
+    if (deleteConfigBtn) {
+      deleteConfigBtn.addEventListener("click", () => {
+        const configSelectEl = $("#bx-config-select");
+        if (!configSelectEl) return;
+        
+        const name = configSelectEl.value;
+        if (!name) return logLine("❌ Please select a config to delete.");
+        
+        if (!confirm(`Delete config "${name}"? This cannot be undone.`)) return;
+        
+        deleteConfig(name);
+        logLine(`✅ Config "${name}" deleted successfully.`);
+      });
+    }
+
+    // Config select double-click
+    const configSelect = $("#bx-config-select");
+    if (configSelect) {
+      configSelect.addEventListener("dblclick", () => {
+        loadConfigBtn?.click();
+      });
+    }
+
+    // Discover devices
+    const discoverBtn = $("#bx-discover-devices");
+    if (discoverBtn) {
+      discoverBtn.addEventListener("click", async () => {
+        discoverBtn.innerHTML = "🔍 Discovering...";
+        discoverBtn.disabled = true;
+        
+        await discoverDevices();
+        
+        discoverBtn.innerHTML = "🔍 Discover Devices";
+        discoverBtn.disabled = false;
+      });
+    }
+
+    // Reset devices
+    const resetDevicesBtn = $("#bx-reset-devices");
+    if (resetDevicesBtn) {
+      resetDevicesBtn.addEventListener("click", () => {
+        if (confirm('Reset to default devices? This will replace your discovered devices.')) {
+          const userDefaults = getUserDefaults();
+          saveDevices(userDefaults.defaultRigs);
+          logLine('🔄 Reset to default devices');
+        }
+      });
+    }
+
+    // Save defaults
+    const saveDefaultsBtn = $("#bx-save-defaults");
+    if (saveDefaultsBtn) {
+      saveDefaultsBtn.addEventListener("click", () => {
+        const defaultWalletEl = $("#bx-default-wallet");
+        const fallbackURLEl = $("#bx-default-fallback-url");
+        const fallbackPortEl = $("#bx-default-fallback-port");
+        
+        if (!defaultWalletEl || !fallbackURLEl || !fallbackPortEl) return;
+        
+        const defaultWallet = defaultWalletEl.value.trim();
+        const fallbackURL = fallbackURLEl.value.trim();
+        const fallbackPort = parseInt(fallbackPortEl.value) || 42069;
+        
+        if (!fallbackURL) {
+          return logLine("❌ Please enter a fallback URL.");
+        }
+        
+        const userDefaults = getUserDefaults();
+        userDefaults.defaultWallet = defaultWallet;
+        userDefaults.fallbackStratumURL = fallbackURL;
+        userDefaults.fallbackStratumPort = fallbackPort;
+        
+        saveUserDefaults(userDefaults);
+        logLine(`✅ Default settings saved successfully.`);
+      });
+    }
+    
+    // Reset defaults
+    const resetDefaultsBtn = $("#bx-reset-defaults");
+    if (resetDefaultsBtn) {
+      resetDefaultsBtn.addEventListener("click", () => {
+        if (confirm('Reset all defaults to factory settings? This cannot be undone.')) {
+          localStorage.removeItem('bitaxe-user-defaults');
+          loadDefaultsUI();
+          logLine('🔄 Reset to factory defaults');
+        }
+      });
+    }
+
+    // Load defaults
+    const loadDefaultsBtn = $("#bx-load-defaults");
+    if (loadDefaultsBtn) {
+      loadDefaultsBtn.addEventListener("click", () => {
+        const walletEl = $("#bx-wallet");
+        if (!walletEl) return;
+        
+        const userDefaults = getUserDefaults();
+        if (userDefaults.defaultWallet) {
+          walletEl.value = userDefaults.defaultWallet;
+          logLine(`✅ Loaded default wallet: ${userDefaults.defaultWallet}`);
+        } else {
+          logLine("ℹ️ No default wallet configured. Set one in Default Settings.");
+        }
+      });
+    }
+
+    // Test settings
+    const testBtn = $("#bx-test");
+    if (testBtn) {
+      testBtn.addEventListener("click", () => {
+        clearLog();
+
+        const poolEl = $("#bx-pool");
+        const walletEl = $("#bx-wallet");
+        const passEl = $("#bx-pass");
+        
+        if (!poolEl || !walletEl || !passEl) return;
+
+        const poolPort = parsePoolPort(poolEl.value);
+        const wallet = walletEl.value.trim();
+        const pass = (passEl.value || "x").trim() || "x";
+
+        if (!poolPort || poolPort.port === null) return logLine("❌ Please enter pool:port (port required).");
+        if (!wallet) return logLine("❌ Please enter wallet address.");
+
+        logLine(`✅ Settings validation passed:`);
+        logLine(`   Pool: ${poolPort.host}`);
+        logLine(`   Port: ${poolPort.port}`);
+        logLine(`   Wallet: ${wallet}`);
+        logLine(`   Password: ${pass}`);
+        logLine("");
+        logLine(`🔧 Worker assignments:`);
+        RIGS.forEach(r => logLine(`   ${r.url} → ${wallet}.${r.worker}`));
+        logLine("");
+        logLine(`💡 Tip: Use password for difficulty (e.g., "d=1000" or "x")`);
+      });
+    }
+
+    // Apply settings
+    const applyBtn = $("#bx-apply");
+    if (applyBtn) {
+      applyBtn.addEventListener("click", async () => {
+        clearLog();
+
+        const poolPort = parsePoolPort($("#bx-pool").value);
+        const wallet = $("#bx-wallet").value.trim();
+        const pass = ($("#bx-pass").value || "x").trim() || "x";
+
+        if (!poolPort || poolPort.port === null) return logLine("❌ Please enter pool:port (port required).");
+        if (!wallet) return logLine("❌ Please enter wallet address.");
+
+        logLine(`🚀 Applying settings to ${RIGS.length} rig(s)...`);
+        logLine(`   Pool: ${poolPort.host}:${poolPort.port}`);
+        logLine(`   Wallet: ${wallet}`);
+        logLine(`   Password: ${pass}`);
+        logLine("");
+
+        const patchResults = await Promise.allSettled(
+          RIGS.map(async (rig) => {
+            const payload = buildPayloadForRig({
+              poolHost: poolPort.host,
+              poolPort: poolPort.port,
+              wallet,
+              worker: rig.worker,
+              pass,
+            });
+            await patchSystem(rig.url, payload);
+            return `${rig.url} → ${wallet}.${rig.worker}`;
+          })
+        );
+
+        patchResults.forEach((r, i) => {
+          const rig = RIGS[i];
+          if (r.status === "fulfilled") logLine(`✅ PATCH OK: ${r.value}`);
+          else logLine(`❌ PATCH FAIL: ${rig.url} -> ${r.reason?.message || r.reason}`);
+        });
+
+        logLine("");
+
+        logLine("Restarting rigs...");
+        const restartResults = await Promise.allSettled(
+          RIGS.map(async (rig) => {
+            await restartRig(rig.url);
+            return rig.url;
+          })
+        );
+
+        restartResults.forEach((r, i) => {
+          const rig = RIGS[i];
+          if (r.status === "fulfilled") logLine(`✅ RESTART OK: ${rig.url}`);
+          else logLine(`❌ RESTART FAIL: ${rig.url} -> ${r.reason?.message || r.reason}`);
+        });
+
+        logLine("");
+        logLine("Done.");
+      });
+    }
+  }
+
   function openUI() {
     if (isAxeOSPage() && injectPanelIntoPage()) {
       const panelBody = panel.querySelector('#bx-panel-body');
@@ -1378,11 +1623,23 @@
     loadDefaultsUI();
     updateDeviceDisplay();
     updateSubtitle();
+    
+    // Setup event listeners for overlay mode
+    setupEventListenersOverlay();
+    
     $("#bx-pool")?.focus();
     logLine("Ready! Enter pool:port + wallet, or load a saved config.");
     logLine("Workers auto-set as {wallet}.{hostname} using device's actual hostname.");
     logLine("Tip: Click 'Discover Devices' to scan for Bitaxe rigs automatically.");
     logLine("Tip: Configure your defaults in the 'Default Settings' section.");
+  }
+
+  function setupEventListenersOverlay() {
+    // Only setup if not already done
+    if (overlay._eventListenersSetup) return;
+    overlay._eventListenersSetup = true;
+    
+    setupEventListeners(); // Reuse the same event listener setup
   }
 
   function closeUI() {
@@ -1395,168 +1652,6 @@
       if (toggleBtn) toggleBtn.textContent = 'Configure Rigs';
     }
   }
-
-  if (overlay) {
-    overlay.querySelector("#bx-close")?.addEventListener("click", closeUI);
-    overlay.addEventListener("click", (e) => { if (e.target === overlay) closeUI(); });
-  }
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      if (overlay.style.display === "flex") closeUI();
-      if (donateModal.style.display === "flex") donateModal.style.display = "none";
-    }
-  });
-
-  $("#bx-save-config")?.addEventListener("click", () => {
-    const configNameEl = $("#bx-config-name");
-    if (!configNameEl) return;
-    
-    const name = configNameEl.value.trim();
-    if (!name) return logLine("❌ Please enter a config name.");
-    
-    const config = getCurrentConfig();
-    if (!config.pool || !config.wallet) {
-      return logLine("❌ Please fill in pool and wallet before saving.");
-    }
-    
-    saveConfig(name, config);
-    configNameEl.value = "";
-    logLine(`✅ Config "${name}" saved successfully.`);
-  });
-
-  $("#bx-load-config")?.addEventListener("click", () => {
-    const configSelectEl = $("#bx-config-select");
-    if (!configSelectEl) return;
-    
-    const name = configSelectEl.value;
-    if (!name) return logLine("❌ Please select a config to load.");
-    
-    const configs = getConfigs();
-    const config = configs[name];
-    if (!config) return logLine("❌ Config not found.");
-    
-    loadConfigData(config);
-    logLine(`✅ Config "${name}" loaded successfully.`);
-  });
-
-  $("#bx-delete-config")?.addEventListener("click", () => {
-    const configSelectEl = $("#bx-config-select");
-    if (!configSelectEl) return;
-    
-    const name = configSelectEl.value;
-    if (!name) return logLine("❌ Please select a config to delete.");
-    
-    if (!confirm(`Delete config "${name}"? This cannot be undone.`)) return;
-    
-    deleteConfig(name);
-    logLine(`✅ Config "${name}" deleted successfully.`);
-  });
-
-  $("#bx-config-select")?.addEventListener("dblclick", () => {
-    $("#bx-load-config")?.click();
-  });
-
-  $("#bx-discover-devices")?.addEventListener("click", async () => {
-    const discoverBtn = $("#bx-discover-devices");
-    if (discoverBtn) {
-      discoverBtn.innerHTML = "🔍 Discovering...";
-      discoverBtn.disabled = true;
-      
-      await discoverDevices();
-      
-      discoverBtn.innerHTML = "🔍 Discover Devices";
-      discoverBtn.disabled = false;
-    }
-  });
-
-  $("#bx-reset-devices")?.addEventListener("click", () => {
-    if (confirm('Reset to default devices? This will replace your discovered devices.')) {
-      const userDefaults = getUserDefaults();
-      saveDevices(userDefaults.defaultRigs);
-      logLine('🔄 Reset to default devices');
-    }
-  });
-
-  $("#bx-save-defaults")?.addEventListener("click", () => {
-    const defaultWalletEl = $("#bx-default-wallet");
-    const fallbackURLEl = $("#bx-default-fallback-url");
-    const fallbackPortEl = $("#bx-default-fallback-port");
-    
-    if (!defaultWalletEl || !fallbackURLEl || !fallbackPortEl) return;
-    
-    const defaultWallet = defaultWalletEl.value.trim();
-    const fallbackURL = fallbackURLEl.value.trim();
-    const fallbackPort = parseInt(fallbackPortEl.value) || 42069;
-    
-    if (!fallbackURL) {
-      return logLine("❌ Please enter a fallback URL.");
-    }
-    
-    const userDefaults = getUserDefaults();
-    userDefaults.defaultWallet = defaultWallet;
-    userDefaults.fallbackStratumURL = fallbackURL;
-    userDefaults.fallbackStratumPort = fallbackPort;
-    
-    saveUserDefaults(userDefaults);
-    logLine(`✅ Default settings saved successfully.`);
-  });
-  
-  $("#bx-reset-defaults")?.addEventListener("click", () => {
-    if (confirm('Reset all defaults to factory settings? This cannot be undone.')) {
-      localStorage.removeItem('bitaxe-user-defaults');
-      loadDefaultsUI();
-      logLine('🔄 Reset to factory defaults');
-    }
-  });
-
-  $("#bx-load-defaults")?.addEventListener("click", () => {
-    const walletEl = $("#bx-wallet");
-    if (!walletEl) return;
-    
-    const userDefaults = getUserDefaults();
-    if (userDefaults.defaultWallet) {
-      walletEl.value = userDefaults.defaultWallet;
-      logLine(`✅ Loaded default wallet: ${userDefaults.defaultWallet}`);
-    } else {
-      logLine("ℹ️ No default wallet configured. Set one in Default Settings.");
-    }
-  });
-
-  donateBtn.addEventListener("click", () => {
-    donateModal.style.display = "flex";
-  });
-
-  donateModal.addEventListener("click", (e) => {
-    if (e.target === donateModal) {
-      donateModal.style.display = "none";
-    }
-  });
-
-  document.addEventListener("click", (e) => {
-    if (e.target.classList.contains("bx-copy-btn")) {
-      const addr = e.target.getAttribute("data-addr");
-      navigator.clipboard.writeText(addr).then(() => {
-        const originalText = e.target.textContent;
-        e.target.textContent = "Copied!";
-        setTimeout(() => {
-          e.target.textContent = originalText;
-        }, 1000);
-      }).catch(() => {
-        const textArea = document.createElement("textarea");
-        textArea.value = addr;
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textArea);
-        
-        const originalText = e.target.textContent;
-        e.target.textContent = "Copied!";
-        setTimeout(() => {
-          e.target.textContent = originalText;
-        }, 1000);
-      });
-    }
-  });
 
   function logLine(msg) {
     const log = $("#bx-log");
@@ -1647,91 +1742,56 @@
     if (defaultFallbackPortEl) defaultFallbackPortEl.value = userDefaults.fallbackStratumPort;
   }
 
-  $("#bx-test")?.addEventListener("click", () => {
-    clearLog();
-
-    const poolEl = $("#bx-pool");
-    const walletEl = $("#bx-wallet");
-    const passEl = $("#bx-pass");
-    
-    if (!poolEl || !walletEl || !passEl) return;
-
-    const poolPort = parsePoolPort(poolEl.value);
-    const wallet = walletEl.value.trim();
-    const pass = (passEl.value || "x").trim() || "x";
-
-    if (!poolPort || poolPort.port === null) return logLine("❌ Please enter pool:port (port required).");
-    if (!wallet) return logLine("❌ Please enter wallet address.");
-
-    logLine(`✅ Settings validation passed:`);
-    logLine(`   Pool: ${poolPort.host}`);
-    logLine(`   Port: ${poolPort.port}`);
-    logLine(`   Wallet: ${wallet}`);
-    logLine(`   Password: ${pass}`);
-    logLine("");
-    logLine(`🔧 Worker assignments:`);
-    RIGS.forEach(r => logLine(`   ${r.url} → ${wallet}.${r.worker}`));
-    logLine("");
-    logLine(`💡 Tip: Use password for difficulty (e.g., "d=1000" or "x")`);
-  });
-
-  $("#bx-apply")?.addEventListener("click", async () => {
-    clearLog();
-
-    const poolPort = parsePoolPort($("#bx-pool").value);
-    const wallet = $("#bx-wallet").value.trim();
-    const pass = ($("#bx-pass").value || "x").trim() || "x";
-
-    if (!poolPort || poolPort.port === null) return logLine("❌ Please enter pool:port (port required).");
-    if (!wallet) return logLine("❌ Please enter wallet address.");
-
-    logLine(`🚀 Applying settings to ${RIGS.length} rig(s)...`);
-    logLine(`   Pool: ${poolPort.host}:${poolPort.port}`);
-    logLine(`   Wallet: ${wallet}`);
-    logLine(`   Password: ${pass}`);
-    logLine("");
-
-    const patchResults = await Promise.allSettled(
-      RIGS.map(async (rig) => {
-        const payload = buildPayloadForRig({
-          poolHost: poolPort.host,
-          poolPort: poolPort.port,
-          wallet,
-          worker: rig.worker,
-          pass,
-        });
-        await patchSystem(rig.url, payload);
-        return `${rig.url} → ${wallet}.${rig.worker}`;
-      })
-    );
-
-    patchResults.forEach((r, i) => {
-      const rig = RIGS[i];
-      if (r.status === "fulfilled") logLine(`✅ PATCH OK: ${r.value}`);
-      else logLine(`❌ PATCH FAIL: ${rig.url} -> ${r.reason?.message || r.reason}`);
-    });
-
-    logLine("");
-
-    logLine("Restarting rigs...");
-    const restartResults = await Promise.allSettled(
-      RIGS.map(async (rig) => {
-        await restartRig(rig.url);
-        return rig.url;
-      })
-    );
-
-    restartResults.forEach((r, i) => {
-      const rig = RIGS[i];
-      if (r.status === "fulfilled") logLine(`✅ RESTART OK: ${rig.url}`);
-      else logLine(`❌ RESTART FAIL: ${rig.url} -> ${r.reason?.message || r.reason}`);
-    });
-
-    logLine("");
-    logLine("Done.");
-  });
-
   loadDevices();
+
+  // Global event listeners (always active)
+  if (overlay) {
+    overlay.querySelector("#bx-close")?.addEventListener("click", closeUI);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) closeUI(); });
+  }
+  
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      if (overlay && overlay.style.display === "flex") closeUI();
+      if (donateModal.style.display === "flex") donateModal.style.display = "none";
+    }
+  });
+
+  donateBtn.addEventListener("click", () => {
+    donateModal.style.display = "flex";
+  });
+
+  donateModal.addEventListener("click", (e) => {
+    if (e.target === donateModal) {
+      donateModal.style.display = "none";
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (e.target.classList.contains("bx-copy-btn")) {
+      const addr = e.target.getAttribute("data-addr");
+      navigator.clipboard.writeText(addr).then(() => {
+        const originalText = e.target.textContent;
+        e.target.textContent = "Copied!";
+        setTimeout(() => {
+          e.target.textContent = originalText;
+        }, 1000);
+      }).catch(() => {
+        const textArea = document.createElement("textarea");
+        textArea.value = addr;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+        
+        const originalText = e.target.textContent;
+        e.target.textContent = "Copied!";
+        setTimeout(() => {
+          e.target.textContent = originalText;
+        }, 1000);
+      });
+    }
+  });
 
   function attemptInjection() {
     if (isAxeOSPage()) {
